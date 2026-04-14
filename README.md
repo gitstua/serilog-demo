@@ -1,15 +1,16 @@
 # Serilog-Enriched ASP.NET Core Demo
 
-This repository demonstrates how to integrate Serilog with ASP.NET Core 8 while enriching log events dynamically with user identity information (simulating data retrieved from an Azure AD token). This pattern is ideal for deployment on services like Azure App Service where robust, contextual logging is critical.
+This repository demonstrates how to integrate Serilog with ASP.NET Core and enrich log events dynamically with user identity information (simulating data retrieved from an Azure AD token). It is configured to write logs to both the console and Azure Application Insights, which is a practical setup for Azure App Service deployments.
 
 ## ✨ Features
 *   **Contextual Logging**: Identity properties (`UserPrincipalName`, `Role`, etc.) are automatically added to every log event during a request lifecycle.
 *   **ASP.NET Core Integration**: Uses the standard modern ASP.NET Core hosting model for deployment readiness.
+*   **Application Insights Sink**: Sends Serilog trace events to Azure Application Insights when a connection string is configured.
 *   **Custom Enrichment**: Implements a custom Serilog enricher combined with middleware to inject dynamic data per request.
 
 ## 📋 Prerequisites
 Before running this project, ensure you have the following installed:
-*   [.NET 8 SDK](https://dotnet.microsoft.com/download)
+*   [.NET 10 SDK](https://dotnet.microsoft.com/download)
 *   `curl` (for testing the API locally)
 
 ## 🚀 Setup and Installation
@@ -19,8 +20,28 @@ Navigate to the project directory and install the necessary NuGet packages:
 ```bash
 cd /Users/stu/code/serilog-demo
 dotnet add package Serilog.AspNetCore --version 8.0.0
-dotnet add package Serilog.Sinks.Console --version 8.0.0
+dotnet add package Serilog.Sinks.Console --version 6.1.1
+dotnet add package Microsoft.ApplicationInsights.AspNetCore --version 2.23.0
+dotnet add package Serilog.Sinks.ApplicationInsights --version 4.0.0
 ```
+
+## Application Insights Configuration
+
+The app uses the standard `APPLICATIONINSIGHTS_CONNECTION_STRING` setting.
+
+For local development:
+
+```bash
+export APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=...;IngestionEndpoint=https://..."
+dotnet run
+```
+
+For Azure App Service:
+
+1. Open the Web App in Azure Portal.
+2. Go to **Environment variables** or **Configuration**.
+3. Add `APPLICATIONINSIGHTS_CONNECTION_STRING` as an application setting.
+4. Restart the app after saving.
 
 ## ▶️ Running Locally
 
@@ -43,7 +64,7 @@ curl http://localhost:5000/api/hello
 #### 🔍 Log Verification
 The most important step is to observe the output **in the console where `dotnet run` is executing**. You should see multiple log lines. Crucially, every single log line related to this request will automatically contain your simulated identity properties (`UserPrincipalName`, `Role`, `TenantId`) because they were injected into the logging context by the custom middleware.
 
-This verifies that the dynamic data successfully propagated through the web framework and into Serilog's structured logging output.
+This verifies that the dynamic data successfully propagated through the web framework and into Serilog's structured logging output. When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present, the same events are also sent to Application Insights.
 
 ## GitHub Actions Deployment (Azure App Service)
 

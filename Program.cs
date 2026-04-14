@@ -1,10 +1,13 @@
   using Microsoft.AspNetCore.Builder;
+    using Microsoft.ApplicationInsights.Extensibility;
    using Microsoft.Extensions.DependencyInjection;
    using Serilog;
     using Serilog.Context;
    using Serilog.Core;
    using Serilog.Events;
+    using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
    using System.Collections.Generic;
+    using System.Linq;
 
    namespace SerilogDemoApp
    {
@@ -49,17 +52,25 @@
        {
            public static void Main(string[] args)
            {
-               // Configure Serilog before the Host is built
-               Log.Logger = new LoggerConfiguration()
-                   .MinimumLevel.Information()
-                   .Enrich.FromLogContext()
-                   .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
-                   .CreateLogger();
-
                try
                {
                    var builder = WebApplication.CreateBuilder(args);
-                   builder.Host.UseSerilog();
+
+                   // Register Application Insights so Serilog can reuse the app's telemetry pipeline.
+                   builder.Services.AddApplicationInsightsTelemetry();
+                   builder.Host.UseSerilog((context, services, configuration) =>
+                   {
+                       configuration
+                           .MinimumLevel.Information()
+                           .Enrich.FromLogContext()
+                           .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}");
+
+                       var telemetryConfiguration = services.GetService<TelemetryConfiguration>();
+                       if (telemetryConfiguration != null)
+                       {
+                           configuration.WriteTo.ApplicationInsights(telemetryConfiguration, TelemetryConverter.Traces);
+                       }
+                   });
 
                    // 3. Register services (including our simulated identity provider)
                    builder.Services.AddSingleton<IIdentityService, IdentityService>();
@@ -99,10 +110,18 @@
                    }
 
                    // Example API Endpoint - No need to pass the enricher now!
-                   app.MapGet("/api/hello", () =>
+                  app.MapGet("/api/hello", (HttpContext httpContext) =>
                    {
+                      var easyAuthUserGuid = httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault()
+                          ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value
+                          ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+
                        Log.Information("Received request to /api/hello.");
-                       return Results.Ok(new { Message = "Hello from Serilog-enriched ASP.NET Core!" });
+                      return Results.Ok(new
+                      {
+                          Message = $"Hello from Serilog-enriched ASP.NET Core! UserGuid: {easyAuthUserGuid ?? "unknown"}",
+                          UserGuid = easyAuthUserGuid
+                      });
                    }).WithName("GetHello");
 
                    app.Run();
