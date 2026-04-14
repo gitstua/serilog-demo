@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  AZURE_WEBAPP_NAME: seilogdemo-c4cngnhmb5b8dabh
+  AZURE_WEBAPP_NAME: seilogdemo
   DOTNET_VERSION: 10.0.x
 
 jobs:
