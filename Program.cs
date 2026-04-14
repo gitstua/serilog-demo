@@ -111,7 +111,17 @@
                    });
 
 
-                   app.UseSerilogRequestLogging(); // Serilog standard request logging
+                   app.UseSerilogRequestLogging(options =>
+                   {
+                       options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+                       {
+                           var easyAuthUserGuid = GetEasyAuthUserGuid(httpContext) ?? "unknown";
+                           diagnosticContext.Set("EasyAuthUserGuid", easyAuthUserGuid);
+
+                           var identityService = httpContext.RequestServices.GetRequiredService<IIdentityService>();
+                           diagnosticContext.Set("UserIdentity", identityService.CurrentUserIdentity, destructureObjects: true);
+                       };
+                   }); // Serilog standard request logging
 
                    if (app.Environment.IsDevelopment())
                    {
