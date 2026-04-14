@@ -3,50 +3,11 @@
    using Microsoft.Extensions.DependencyInjection;
    using Serilog;
     using Serilog.Context;
-   using Serilog.Core;
-   using Serilog.Events;
     using Serilog.Sinks.ApplicationInsights.TelemetryConverters;
-   using System.Collections.Generic;
     using System.Linq;
 
    namespace SerilogDemoApp
    {
-       // 1. Define the custom enricher
-       public class AzureAdIdentityEnricher : ILogEventEnricher
-       {
-           private readonly Dictionary<string, string> _identityData;
-
-           public AzureAdIdentityEnricher(Dictionary<string, string> identityData)
-           {
-               _identityData = identityData ?? new Dictionary<string, string>();
-           }
-
-           public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
-           {
-               // Add custom properties from the identity dictionary to the log event
-               foreach (var pair in _identityData)
-               {
-                   logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty(pair.Key, pair.Value));
-               }
-           }
-       }
-
-       // 2. Service to simulate fetching/providing identity context
-       public interface IIdentityService
-       {
-           Dictionary<string, string> CurrentUserIdentity { get; }
-       }
-
-       public class IdentityService : IIdentityService
-       {
-           // This simulates getting the claims from a request or token validation
-           public Dictionary<string, string> CurrentUserIdentity => new Dictionary<string, string>
-           {
-               {"UserPrincipalName", "appuser@example.com"},
-               {"Role", "ServiceAccount"},
-               {"TenantId", "abcd-456"}
-           };
-       }
 
        public class Program
        {
@@ -72,8 +33,6 @@
                        }
                    });
 
-                   // 3. Register services (including our simulated identity provider)
-                   builder.Services.AddSingleton<IIdentityService, IdentityService>();
                    builder.Services.AddControllers();
                    builder.Services.AddEndpointsApiExplorer();
                    builder.Services.AddSwaggerGen();
@@ -88,25 +47,13 @@
                            ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
                    }
 
-                   // 4. Register the Enricher Middleware (best practice for per-request data)
+                   // Enrich all logs during this request with the Easy Auth user GUID.
                    app.Use(async (context, next) =>
                    {
-                       // Get identity from our service layer
-                       using (var scope = context.RequestServices.CreateScope())
+                       var easyAuthUserGuid = GetEasyAuthUserGuid(context);
+                       using (LogContext.PushProperty("EasyAuthUserGuid", easyAuthUserGuid ?? "unknown"))
                        {
-                           var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
-
-                           // Create a specific enricher instance for this request's context
-                           var enricher = new AzureAdIdentityEnricher(identityService.CurrentUserIdentity);
-
-                           var easyAuthUserGuid = GetEasyAuthUserGuid(context);
-
-                           // Attach identity context to all logs during this request.
-                           using (LogContext.PushProperty("UserIdentity", identityService.CurrentUserIdentity, destructureObjects: true))
-                           using (LogContext.PushProperty("EasyAuthUserGuid", easyAuthUserGuid ?? "unknown"))
-                           {
-                               await next();
-                           }
+                           await next();
                        }
                    });
 
@@ -115,11 +62,7 @@
                    {
                        options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
                        {
-                           var easyAuthUserGuid = GetEasyAuthUserGuid(httpContext) ?? "unknown";
-                           diagnosticContext.Set("EasyAuthUserGuid", easyAuthUserGuid);
-
-                           var identityService = httpContext.RequestServices.GetRequiredService<IIdentityService>();
-                           diagnosticContext.Set("UserIdentity", identityService.CurrentUserIdentity, destructureObjects: true);
+                           diagnosticContext.Set("EasyAuthUserGuid", GetEasyAuthUserGuid(httpContext) ?? "unknown");
                        };
                    }); // Serilog standard request logging
 
