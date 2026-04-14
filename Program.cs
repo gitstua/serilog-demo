@@ -81,6 +81,13 @@
 
                    var app = builder.Build();
 
+                   static string? GetEasyAuthUserGuid(HttpContext httpContext)
+                   {
+                       return httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault()
+                           ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value
+                           ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+                   }
+
                    // 4. Register the Enricher Middleware (best practice for per-request data)
                    app.Use(async (context, next) =>
                    {
@@ -92,8 +99,11 @@
                            // Create a specific enricher instance for this request's context
                            var enricher = new AzureAdIdentityEnricher(identityService.CurrentUserIdentity);
 
-                           // Attach the enricher to the logging scope for all logs during this request
-                           using (LogContext.PushProperty("UserIdentity", identityService.CurrentUserIdentity))
+                           var easyAuthUserGuid = GetEasyAuthUserGuid(context);
+
+                           // Attach identity context to all logs during this request.
+                           using (LogContext.PushProperty("UserIdentity", identityService.CurrentUserIdentity, destructureObjects: true))
+                           using (LogContext.PushProperty("EasyAuthUserGuid", easyAuthUserGuid ?? "unknown"))
                            {
                                await next();
                            }
@@ -110,18 +120,16 @@
                    }
 
                    // Example API Endpoint - No need to pass the enricher now!
-                  app.MapGet("/api/hello", (HttpContext httpContext) =>
+                   app.MapGet("/api/hello", (HttpContext httpContext) =>
                    {
-                      var easyAuthUserGuid = httpContext.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].FirstOrDefault()
-                          ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value
-                          ?? httpContext.User?.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+                       var easyAuthUserGuid = GetEasyAuthUserGuid(httpContext);
 
                        Log.Information("Received request to /api/hello.");
-                      return Results.Ok(new
-                      {
-                          Message = $"Hello from Serilog-enriched ASP.NET Core! UserGuid: {easyAuthUserGuid ?? "unknown"}",
-                          UserGuid = easyAuthUserGuid
-                      });
+                       return Results.Ok(new
+                       {
+                           Message = $"v2 Hello from Serilog-enriched ASP.NET Core! UserGuid: {easyAuthUserGuid ?? "unknown"}",
+                           UserGuid = easyAuthUserGuid
+                       });
                    }).WithName("GetHello");
 
                    app.Run();
