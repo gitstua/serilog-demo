@@ -62,7 +62,20 @@ curl http://localhost:5000/api/hello
 ```
 
 #### 🔍 Log Verification
-The most important step is to observe the output **in the console where `dotnet run` is executing**. You should see multiple log lines. Crucially, every single log line related to this request will automatically contain your simulated identity properties (`UserPrincipalName`, `Role`, `TenantId`) because they were injected into the logging context by the custom middleware.
+The most important step is to observe the output **in the console where `dotnet run` is executing**. You should see multiple log lines. The requests should show similar to below with `EasyAuthUserGuid` in the `customDimensions`
+
+Example query:
+```sql
+union isfuzzy=true
+    requests,
+    dependencies
+| where timestamp > datetime("2026-04-13T11:34:06.322Z")
+| where * has "49eaaa-0000-4b41-a784-944432700012"
+| order by timestamp desc
+| take 100
+```
+
+![alt text](<CleanShot 2026-04-15 at 19.54.07@2x.png>)
 
 This verifies that the dynamic data successfully propagated through the web framework and into Serilog's structured logging output. When `APPLICATIONINSIGHTS_CONNECTION_STRING` is present, the same events are also sent to Application Insights.
 
